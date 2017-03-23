@@ -79,33 +79,57 @@ sample_mismatch = function(gbrs, muga) {
   muga = t(muga)
   gbrs = t(gbrs)
 
-  # Use the Pearson correlation to compare samples.
-  # MUGA samples will be in rows. GBRS samples in columns.
+  # Use the Pearson correlation of the haplotype probabilities as a vector
+  # to compare samples.
   message("Calculating corrlations...")
-  geno.cor = cor(muga, gbrs)
-
-  # Get the GBRS sample with the maximum correlation for each MUGA sample.
-  muga.max.cor = apply(geno.cor, 1, max)
-  muga.max.cor.col = apply(geno.cor, 1, which.max)
-
-  # Collate the results.
-  message("Collating results...")
   result = data.frame(muga.sample = colnames(muga),
                       self.cor    = rep(NA, ncol(muga)),
-                      best.gbrs.sample = colnames(geno.cor)[muga.max.cor.col],
-                      cross.cor    = geno.cor[matrix(c(1:nrow(geno.cor), muga.max.cor.col),
-                                    ncol = 2)],
+                      best.gbrs.sample = rep(NA, ncol(muga)),
+                      best.gbrs.cor    = rep(NA, ncol(muga)),
                       mismatch = rep(NA, ncol(muga)),
                       stringsAsFactors = F)
+  m = intersect(colnames(muga), colnames(gbrs))
+  muga.m = match(m, colnames(muga))
+  gbrs.m = match(m, colnames(gbrs))
+  result.m = match(m, result$muga.sample)
+  for(i in 1:length(m)) {
 
-  # If the MUGA sample was in the GBRS data, then add the correlation of the
-  # MUGA sample to the GBRS sample of the same name.
-  m = match(rownames(geno.cor), colnames(geno.cor))
-  muga.row = which(!is.na(m))
-  result$self.cor[muga.row] = geno.cor[matrix(c(muga.row, m[muga.row]), ncol = 2)]
+    result$self.cor[result.m[i]] = cor(muga[,muga.m[i]], gbrs[,gbrs.m[i]])
 
-  wh = which(!is.na(result$self.cor))
-  result$mismatch[wh] = result$muga.sample[wh] != result$best.gbrs.sample[wh]
+  } # for(i)
+
+  ok = which(result$self.cor >= 0.6)
+  result$best.gbrs.sample[ok] = result$muga.sample[ok]
+  result$best.gbrs.cor[ok]    = result$self.cor[ok]
+
+  # For any sample with self.cor < 0.6, look for a sample with a better
+  # match.
+  mismatch = which(result$self.cor < 0.6)
+  for(i in 1:length(mismatch)) {
+
+    tmp.cor  = cor(muga[,mismatch[i]], gbrs)
+    best.cor = tmp.cor[1,which.max(tmp.cor[1,])]
+    result$best.gbrs.sample[mismatch[i]] = names(best.cor)
+    result$best.gbrs.cor[mismatch[i]]    = best.cor
+
+  } # for(i)
+
+  # If the best GBRS correlation is still low, cross-check against all
+  # MUGA samples.
+  mismatch = which(result$best.gbrs.cor < 0.6)
+  for(i in 1:length(mismatch)) {
+
+    gbrs.column = which(colnames(gbrs) == result$muga.sample[mismatch[i]])
+    tmp.cor  = cor(muga, gbrs[,gbrs.column])
+    best.cor = tmp.cor[which.max(tmp.cor[,1]),1]
+    result$best.gbrs.sample[mismatch[i]] = names(best.cor)
+    result$best.gbrs.cor[mismatch[i]]    = best.cor
+
+  } # for(i)  
+
+  # Set mismatch column to TRUE if the self-correlation column is 
+  # less than 0.65.
+  result$mismatch = result$self.cor < 0.65
 
   return(result)
 
